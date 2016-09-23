@@ -85,6 +85,46 @@ map_total <- ggmap(urbana, extent = "device", darken=0.7) + geom_density2d(data 
       geom_point(aes(x=longitude, y=latitude), data=yelp_businesses, col="orange", size = 0.2, alpha=0.4)
 map_total
 
+# Filter data by year for test sets (for crime and yelp data)
+crime_data05 <- filter(crime_data, crime_data$YEAR.OCCURRED == 2005)
+yelp_data05 <- filter(yelp_master, grepl('2005', date))
+
+crime_data06 <- filter(crime_data, crime_data$YEAR.OCCURRED == 2006)
+yelp_data06 <- filter(yelp_master, grepl('2006', date))
+
+crime_data07 <- filter(crime_data, crime_data$YEAR.OCCURRED == 2007)
+yelp_data07 <- filter(yelp_master, grepl('2007', date))
+
+crime_data08 <- filter(crime_data, crime_data$YEAR.OCCURRED == 2008)
+yelp_data08 <- filter(yelp_master, grepl('2008', date))
+
+crime_data09 <- filter(crime_data, crime_data$YEAR.OCCURRED == 2009)
+yelp_data09 <- filter(yelp_master, grepl('2009', date))
+
+crime_data10 <- filter(crime_data, crime_data$YEAR.OCCURRED == 2010)
+yelp_data10 <- filter(yelp_master, grepl('2010', date))
+
+crime_data11 <- filter(crime_data, crime_data$YEAR.OCCURRED == 2011)
+yelp_data11 <- filter(yelp_master, grepl('2011', date))
+
+crime_data12 <- filter(crime_data, crime_data$YEAR.OCCURRED == 2012)
+yelp_data12 <- filter(yelp_master, grepl('2012', date))
+
+crime_data13 <- filter(crime_data, crime_data$YEAR.OCCURRED == 2013)
+yelp_data13 <- filter(yelp_master, grepl('2013', date))
+
+crime_data14 <- filter(crime_data, crime_data$YEAR.OCCURRED == 2014)
+yelp_data14 <- filter(yelp_master, grepl('2014', date))
+
+crime_data15 <- filter(crime_data, crime_data$YEAR.OCCURRED == 2015)
+yelp_data15 <- filter(yelp_master, grepl('2015', date))
+
 # TODO:
-# separate crime by year
+
+# Friday/Saturday
 # Hypothesis Testing
+# Writeup
+
+# Sunday
+# Hypothesis Testing
+# WriteUp 
