@@ -86,6 +86,12 @@ names(crime_data)[c(38, 37, 36)] <- c("response", "long", "lat")
 crime_data <- crime_data[complete.cases(crime_data$long),]
 crime_data <- crime_data[complete.cases(crime_data$lat),]
 
+# change long/lat to meters and bind to crime_data
+crimes.locations.lonlat = cbind(crime_data$long, crime_data$lat)
+crimes.locations.meters = project(crimes.locations.lonlat, proj="+init=epsg:26971")
+head(crimes.locations.meters)
+crime_data <- cbind(crime_data, crimes.locations.meters[,1], crimes.locations.meters[,2])
+names(crime_data)[c(39,40)] <- c("longmeters", "latmeters")
 
 ## URBANA CRIME HEAT MAP ##
 
@@ -158,6 +164,13 @@ urbana_full <- cbind(0, long, lat)
 urbana_full <- as.data.frame(urbana_full)
 names(urbana_full)[1] <- "response"
 
+# change long/lat to meters and bind to urbana_full
+urbana_longlat = cbind(urbana_full$long, urbana_full$lat)
+urbana_longlat_meters = project(urbana_longlat, proj="+init=epsg:26971")
+head(urbana_longlat_meters)
+urbana_full <- cbind(urbana_full, urbana_longlat_meters[,1], urbana_longlat_meters[,2])
+names(urbana_full)[c(4,5)] <- c("longmeters", "latmeters")
+
 ## TRAIN MODEL ON RESPONSES FROM 2014, USING PREDICTORS FROM 2013 ##
 
 # Training Set for 2014 (Non-Crime coordinates and Yelp Data)
@@ -165,14 +178,15 @@ names(urbana_full)[1] <- "response"
 urbana_full14 <- urbana_full[!(urbana_full$long %in% crime_data14$Longitude),]
 # bind the non-crime coordinates with the crime coordinates
 head(crime_data14)
-train14 <- rbind(urbana_full14, crime_data14[,c('response', 'long', 'lat')])
-nrow(train14)
-head(train14)
+train14 <- rbind(urbana_full14, crime_data14[,c('response', 'long', 'lat', 'longmeters', 'latmeters')])
 
 # get crime densities for 2014 training point based on 2013s data points
 kde2d(crime)
-h = Hpi(crime_data13[,c("long","lat")], pilot="dscalar")
-crime_density = kde(crime_data13[,c("long","lat")], H=h, eval.points=train14[,c("long","lat")])$estimate
+h = Hpi(crime_data13[,c("longmeters","latmeters")], pilot="dscalar")
+crime_density = kde(crime_data13[,c("longmeters","latmeters")], H=h, eval.points=train14[,c("longmeters","latmeters")])$estimate
+
+# bind crime density as predictor to training data
+train14 = cbind(train14, crime_density)
 
 # calculate business cash predictors
 
