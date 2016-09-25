@@ -69,6 +69,13 @@ yelp_dataset <- read.csv("yelp_dataset.csv")
 # yelp_master <- yelp_master[complete.cases(yelp_master$longitude),]
 # yelp_master <- yelp_master[complete.cases(yelp_master$latitude),]
 
+# change long/lat to meters and bind to crime_data
+yelp_master_lonlat = cbind(yelp_master$longitude, yelp_master$latitude)
+yelp_master_meters = project(yelp_master_lonlat, proj="+init=epsg:26971")
+head(yelp_master_meters)
+yelp_master <- cbind(yelp_master, yelp_master_meters[,1], yelp_master_meters[,2])
+names(yelp_master)[c(82,83)] <- c("longmeters", "latmeters")
+
 # # Create CSV for master dataset of yelp reviews and businesses:
 # yelp_master[,c("categories", "full_address")] <- NULL
 # write.csv(yelp_master, file="yelp_master.csv")
@@ -189,6 +196,11 @@ crime_density = kde(crime_data13[,c("longmeters","latmeters")], H=h, eval.points
 train14 = cbind(train14, crime_density)
 
 # calculate business cash predictors
+names(yelp_data14)
+# reduce data down to business cash attributes
+business_cash14 <- yelp_data14[,(c("business_id", "name", "longitude", "latitude", "attributes.Accepts.Credit.Cards", "longmeters", "latmeters"))]
+# remove NAs from cash attribute column
+business_cash14 <- business_cash14[complete.cases(business_cash14$attributes.Accepts.Credit.Cards),]
 
 # add predictors to training data
 
@@ -197,4 +209,5 @@ train14 = cbind(train14, crime_density)
 ## PREDICT RESPONSES ON 2015 DATA, USING FITTED MODEL AND PREDICTORS FROM 2014 ##
 
 ## EVALUATE PREDICTIONS ##
+
 
