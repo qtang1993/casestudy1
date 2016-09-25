@@ -100,6 +100,9 @@ head(crimes.locations.meters)
 crime_data <- cbind(crime_data, crimes.locations.meters[,1], crimes.locations.meters[,2])
 names(crime_data)[c(39,40)] <- c("longmeters", "latmeters")
 
+# Clean Crime Data so error coordinates are not included 
+crime_data <- crime_data[crime_data$lat < 41 & crime_data$lat > 39 & crime_data$long < -87 & crime_data$long > -89, ]
+
 ## URBANA CRIME HEAT MAP ##
 
 # Download the base map
@@ -171,8 +174,8 @@ yelp_data15 <- yelp_data15[!duplicated(yelp_data15[,2]),]
 # }
 
 # Create list of coordinates that span Urbana
-long <- seq(-88.23302, -88.15307, length.out = 10000)
-lat <- seq(40.07324, 40.15742, length.out = 10000)
+long <- seq(-88.23302, -88.15307, length.out = 20000)
+lat <- seq(40.07324, 40.15742, length.out = 20000)
 urbana_full <- cbind(0, long, lat)
 urbana_full <- as.data.frame(urbana_full)
 names(urbana_full)[1] <- "response"
@@ -184,19 +187,24 @@ head(urbana_longlat_meters)
 urbana_full <- cbind(urbana_full, urbana_longlat_meters[,1], urbana_longlat_meters[,2])
 names(urbana_full)[c(4,5)] <- c("longmeters", "latmeters")
 
-## TRAIN MODEL ON RESPONSES FROM 2014, USING PREDICTORS FROM 2013 ##
+### TRAIN MODEL ON RESPONSES FROM 2014 ###
 
 # Training Set for 2014 (Non-Crime coordinates and Yelp Data)
 # remove crime coordinates from non-crime coordinates
 urbana_full14 <- urbana_full[!(urbana_full$long %in% crime_data14$Longitude),]
+
+# create a set of 20,000 points (including crime)
+fill <- 20000 - nrow(crime_data14)
+urbana_full14 <- urbana_full14[sample(nrow(urbana_full14), fill), ]
+
 # bind the non-crime coordinates with the crime coordinates
 head(crime_data14)
 train14 <- rbind(urbana_full14, crime_data14[,c('response', 'long', 'lat', 'longmeters', 'latmeters')])
 
-## ADDING CRIME DENSITY FOR PREVIOUS YEAR AS A PREDICTOR ## 
+## ADDING PREDICTOR: CRIME DENSITY FOR PREVIOUS YEAR ## 
 
 # get crime densities for 2014 training point based on 2013s data points
-kde2d(crime)
+
 h = Hpi(crime_data13[,c("longmeters","latmeters")], pilot="dscalar")
 crime_density = kde(crime_data13[,c("longmeters","latmeters")], H=h, eval.points=train14[,c("longmeters","latmeters")])$estimate
 
@@ -204,7 +212,7 @@ crime_density = kde(crime_data13[,c("longmeters","latmeters")], H=h, eval.points
 train14 = cbind(train14, crime_density)
 head(train14)
 
-## ADDING PREDICTOR: % OF BUSINESSES ONLY TAKING CASH WITHIN A 2 MILE RADIUS ## 
+## ADDING PREDICTOR: % OF BUSINESSES ONLY TAKING CASH WITHIN A 1 MILE RADIUS ## 
 
 # calculate business cash predictors
 names(yelp_data14)
@@ -212,7 +220,7 @@ names(yelp_data14)
 business_cash14 <- yelp_data14[,(c("business_id", "name", "longitude", "latitude", "attributes.Accepts.Credit.Cards", "longmeters", "latmeters"))]
 # remove NAs from cash attribute column
 business_cash14 <- business_cash14[complete.cases(business_cash14$attributes.Accepts.Credit.Cards),]
-# calculate businesses in 250 m radius to coordinate
+# calculate businesses in 1 mile radius to coordinate
 str(business_cash14)
 str(train14)
 
@@ -221,16 +229,24 @@ train14$cash <- 0
 for (i in 1:nrow(train14)){
     distance <- sqrt((train14[i,"longmeters"]-business_cash14[,"longmeters"])^2 + (train14[i,"latmeters"]-business_cash14[,"latmeters"])^2)
     business_radius <- which(distance < 3218.69)
+    
     for (j in 1:length(business_radius)) {
       credit <- c(credit, business_cash14[business_radius[j],"attributes.Accepts.Credit.Cards"])
     }
+    
     credit_total <- sum(credit)/length(business_radius)
-    train14$cash[i] <- ((1 - credit_total) * 100)
-    credit <- 0
+    
+    if (is.na(credit_total)) {
+      train14$cash[i] <- 0
+      credit <- 0
+    }
+    else {
+      train14$cash[i] <- ((1 - credit_total) * 100)
+      credit <- 0
+    }
 }
 
-
-## ADDING PREDICTOR: AVERAGE RATINGS OF BUSINESSES IN 2 MILE RADIUS ## 
+## ADDING PREDICTOR: AVERAGE RATINGS OF BUSINESSES IN 1 MILE RADIUS ## 
 
 # calculate business cash predictors
 
@@ -243,31 +259,137 @@ business_rating14 <- business_rating14[complete.cases(business_rating14$business
 # calculate average rating of businesses in 250 m 
 ratings <- 0 
 train14$avg_rating <- 0
+
 for (i in 1:nrow(train14)){
   distance <- sqrt((train14[i,"longmeters"]-business_rating14[,"longmeters"])^2 + (train14[i,"latmeters"]-business_rating14[,"latmeters"])^2)
   business_radius <- which(distance < 3218.69)
+  
   for (j in 1:length(business_radius)) {
     ratings <- c(ratings, business_rating14[business_radius[j], "business_stars"])
   }
-  train14$avg_rating[i] <- (sum(ratings)/length(business_radius)) * 100
-  ratings <- 0
+  
+  if (is.na((sum(ratings)/length(business_radius)))) {
+    train14$avg_rating[i] <- 0
+    ratings <- 0
+  }
+  else {
+    train14$avg_rating[i] <- (sum(ratings)/length(business_radius))
+    ratings <- 0
+  }
 }
 
-ratings <- 0 
-train14$avg_rating <- 0
-for (i in 1:nrow(train14)){
-  distance <- sqrt((train14[1,"longmeters"]-business_rating14[,"longmeters"])^2 + (train14[1,"latmeters"]-business_rating14[,"latmeters"])^2)
+
+## FIT LOGISTIC REGRESSION MODEL ##
+
+## PREDICTORS: % OF CASH ONLY BUSINESSES WITHIN A 2 MILE RADIUS ##
+## RESPONSE: LOCATION OF CRIME OR NOT (1 or 0 respectively) ##
+
+str(train14)
+logm_14cash = glm(response ~ crime_density+cash, data = train14, family=binomial)
+summary(logm_14cash)
+# Coefficients:
+#   Estimate Std. Error z value Pr(>|z|)    
+#   (Intercept)   -8.731e+00  2.026e-01  -43.09   <2e-16 ***
+#   crime_density  1.717e+09  5.066e+07   33.88   <2e-16 ***
+#   cash           4.827e-01  1.718e-02   28.09   <2e-16 ***
+
+## PREDICTORS: AVERAGE BUSINESS RATING IN A 2 MILE RADIUS ##
+## RESPONSE: LOCATION OF CRIME OR NOT (1 or 0 respectively) ##
+
+str(train14)
+logm_14ratings = glm(response ~ crime_density+avg_rating, data = train14, family=binomial)
+summary(logm_14ratings)
+# Coefficients:
+#   Estimate Std. Error z value Pr(>|z|)    
+#   (Intercept)   -1.303e+01  6.622e-01 -19.678  < 2e-16 ***
+#   crime_density  2.443e+09  4.542e+07  53.779  < 2e-16 ***
+#   avg_rating     9.318e-01  1.547e-01   6.022 1.72e-09 ***
+
+
+### PREDICT RESPONSES ON 2015 DATA, USING FITTED MODEL AND PREDICTORS FROM 2014 ###
+
+# build prediction data for 2015 data
+# crime density from 2014
+# % of businesses cash only within 2 miles for 2015
+# avg ratings for businesses within 2 miles for 2015
+
+# get coordinates from urbana city
+urbana_full15 <- urbana_full[,2:5]
+
+# create a set of 20,000 points (including crime)
+fill2 <- 20000 - nrow(crime_data15)
+urbana_full15 <- urbana_full15[sample(nrow(urbana_full15), fill2), ]
+
+# include 2015 crime coordinates (without responses)
+predict15 <- rbind(urbana_full15, crime_data15[,c('long', 'lat', 'longmeters', 'latmeters')])
+
+## ADDING PREDICTOR: CRIME DENSITY FOR PREVIOUS YEAR ## 
+
+# get crime densities for 2015 prediction points based on 2014s data points
+
+h = Hpi(crime_data14[,c("longmeters","latmeters")], pilot="dscalar")
+crime_density14 = kde(crime_data14[,c("longmeters","latmeters")], H=h, eval.points=predict15[,c("longmeters","latmeters")])$estimate
+
+# bind crime density as predictor to training data
+predict15 = cbind(predict15, crime_density14)
+head(predict15)
+
+## ADDING PREDICTOR: % OF BUSINESSES ONLY TAKING CASH WITHIN A 2 MILE RADIUS ## 
+
+# calculate business cash predictors
+names(yelp_data15)
+# reduce data down to business cash attributes
+business_cash15 <- yelp_data15[,(c("business_id", "name", "longitude", "latitude", "attributes.Accepts.Credit.Cards", "longmeters", "latmeters"))]
+# remove NAs from cash attribute column
+business_cash15 <- business_cash15[complete.cases(business_cash15$attributes.Accepts.Credit.Cards),]
+# calculate businesses in 250 m radius to coordinate
+str(business_cash15)
+
+
+credit <- 0 
+predict15$cash <- 0
+for (i in 1:nrow(predict15)){
+  distance <- sqrt((predict15[i,"longmeters"]-business_cash15[,"longmeters"])^2 + (predict15[i,"latmeters"]-business_cash15[,"latmeters"])^2)
   business_radius <- which(distance < 3218.69)
   for (j in 1:length(business_radius)) {
-    ratings <- c(ratings, business_rating14[business_radius[1], "business_stars"])
+    credit <- c(credit, business_cash15[business_radius[j],"attributes.Accepts.Credit.Cards"])
   }
-  train14$avg_rating[1] <- (sum(ratings)/length(business_radius)) * 100
+  credit_total <- sum(credit)/length(business_radius)
+  predict15$cash[i] <- ((1 - credit_total) * 100)
+  credit <- 0
+}
+
+
+## ADDING PREDICTOR: AVERAGE RATINGS OF BUSINESSES IN 2 MILE RADIUS ## 
+
+# calculate business cash predictors
+
+names(yelp_data15)
+# reduce data down to business ratings attributes
+business_rating15 <- yelp_data15[,(c("business_id", "name", "longitude", "latitude", "business_stars", "longmeters", "latmeters"))]
+# remove NAs from ratings attribute column
+business_rating15 <- business_rating15[complete.cases(business_rating15$business_stars),]
+
+# calculate average rating of businesses in 2 mile radius
+ratings <- 0 
+predict15$avg_rating <- 0
+for (i in 1:nrow(predict15)){
+  distance <- sqrt((predict15[i,"longmeters"]-business_rating15[,"longmeters"])^2 + (predict15[i,"latmeters"]-business_rating15[,"latmeters"])^2)
+  business_radius <- which(distance < 3218.69)
+  for (j in 1:length(business_radius)) {
+    ratings <- c(ratings, business_rating15[business_radius[j], "business_stars"])
+  }
+  predict15$avg_rating[i] <- (sum(ratings)/length(business_radius))
   ratings <- 0
 }
 
-# fit glm
+### PREDICTION ###
 
-## PREDICT RESPONSES ON 2015 DATA, USING FITTED MODEL AND PREDICTORS FROM 2014 ##
+# run prediction for cash
+crime_predict_cash = predict(logm_14cash, predict15, type="response")
+
+# run prediction for avg_ratings
+crime_predict_ratings = predict(logm_14ratings, predict15, type="response")
 
 ## EVALUATE PREDICTIONS ##
 
