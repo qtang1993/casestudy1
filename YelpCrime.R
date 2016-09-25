@@ -144,12 +144,18 @@ yelp_data12 <- filter(yelp_master, grepl('2012', date))
 
 crime_data13 <- filter(crime_data, crime_data$YEAR.OCCURRED == 2013)
 yelp_data13 <- filter(yelp_master, grepl('2013', date))
+# pare down data so each row is a unique business
+yelp_data13 <- yelp_data13[!duplicated(yelp_data13[,2]),]
 
 crime_data14 <- filter(crime_data, crime_data$YEAR.OCCURRED == 2014)
 yelp_data14 <- filter(yelp_master, grepl('2014', date))
+# pare down data so each row is a unique business
+yelp_data14 <- yelp_data14[!duplicated(yelp_data14[,2]),]
 
 crime_data15 <- filter(crime_data, crime_data$YEAR.OCCURRED == 2015)
 yelp_data15 <- filter(yelp_master, grepl('2015', date))
+# pare down data so each row is a unique business
+yelp_data15 <- yelp_data15[!duplicated(yelp_data15[,2]),]
 
 ### CREATE TRAINING DATA SETS ### 
 
@@ -187,6 +193,8 @@ urbana_full14 <- urbana_full[!(urbana_full$long %in% crime_data14$Longitude),]
 head(crime_data14)
 train14 <- rbind(urbana_full14, crime_data14[,c('response', 'long', 'lat', 'longmeters', 'latmeters')])
 
+## ADDING CRIME DENSITY FOR PREVIOUS YEAR AS A PREDICTOR ## 
+
 # get crime densities for 2014 training point based on 2013s data points
 kde2d(crime)
 h = Hpi(crime_data13[,c("longmeters","latmeters")], pilot="dscalar")
@@ -194,6 +202,9 @@ crime_density = kde(crime_data13[,c("longmeters","latmeters")], H=h, eval.points
 
 # bind crime density as predictor to training data
 train14 = cbind(train14, crime_density)
+head(train14)
+
+## ADDING PREDICTOR: % OF BUSINESSES ONLY TAKING CASH WITHIN A 2 MILE RADIUS ## 
 
 # calculate business cash predictors
 names(yelp_data14)
@@ -201,8 +212,58 @@ names(yelp_data14)
 business_cash14 <- yelp_data14[,(c("business_id", "name", "longitude", "latitude", "attributes.Accepts.Credit.Cards", "longmeters", "latmeters"))]
 # remove NAs from cash attribute column
 business_cash14 <- business_cash14[complete.cases(business_cash14$attributes.Accepts.Credit.Cards),]
+# calculate businesses in 250 m radius to coordinate
+str(business_cash14)
+str(train14)
 
-# add predictors to training data
+credit <- 0 
+train14$cash <- 0
+for (i in 1:nrow(train14)){
+    distance <- sqrt((train14[i,"longmeters"]-business_cash14[,"longmeters"])^2 + (train14[i,"latmeters"]-business_cash14[,"latmeters"])^2)
+    business_radius <- which(distance < 3218.69)
+    for (j in 1:length(business_radius)) {
+      credit <- c(credit, business_cash14[business_radius[j],"attributes.Accepts.Credit.Cards"])
+    }
+    credit_total <- sum(credit)/length(business_radius)
+    train14$cash[i] <- ((1 - credit_total) * 100)
+    credit <- 0
+}
+
+
+## ADDING PREDICTOR: AVERAGE RATINGS OF BUSINESSES IN 2 MILE RADIUS ## 
+
+# calculate business cash predictors
+
+names(yelp_data14)
+# reduce data down to business ratings attributes
+business_rating14 <- yelp_data14[,(c("business_id", "name", "longitude", "latitude", "business_stars", "longmeters", "latmeters"))]
+# remove NAs from ratings attribute column
+business_rating14 <- business_rating14[complete.cases(business_rating14$business_stars),]
+
+# calculate average rating of businesses in 250 m 
+ratings <- 0 
+train14$avg_rating <- 0
+for (i in 1:nrow(train14)){
+  distance <- sqrt((train14[i,"longmeters"]-business_rating14[,"longmeters"])^2 + (train14[i,"latmeters"]-business_rating14[,"latmeters"])^2)
+  business_radius <- which(distance < 3218.69)
+  for (j in 1:length(business_radius)) {
+    ratings <- c(ratings, business_rating14[business_radius[j], "business_stars"])
+  }
+  train14$avg_rating[i] <- (sum(ratings)/length(business_radius)) * 100
+  ratings <- 0
+}
+
+ratings <- 0 
+train14$avg_rating <- 0
+for (i in 1:nrow(train14)){
+  distance <- sqrt((train14[1,"longmeters"]-business_rating14[,"longmeters"])^2 + (train14[1,"latmeters"]-business_rating14[,"latmeters"])^2)
+  business_radius <- which(distance < 3218.69)
+  for (j in 1:length(business_radius)) {
+    ratings <- c(ratings, business_rating14[business_radius[1], "business_stars"])
+  }
+  train14$avg_rating[1] <- (sum(ratings)/length(business_radius)) * 100
+  ratings <- 0
+}
 
 # fit glm
 
