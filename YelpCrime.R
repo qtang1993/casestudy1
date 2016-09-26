@@ -14,6 +14,7 @@ library(RColorBrewer)
 library(kedd)
 library(ks)
 library(ggmap)
+library(ROCR)
 
 yelp_dataset <- read.csv("yelp_dataset.csv")
 
@@ -212,7 +213,7 @@ crime_density = kde(crime_data13[,c("longmeters","latmeters")], H=h, eval.points
 train14 = cbind(train14, crime_density)
 head(train14)
 
-## ADDING PREDICTOR: % OF BUSINESSES ONLY TAKING CASH WITHIN A 1 MILE RADIUS ## 
+## ADDING PREDICTOR: 2014 % OF BUSINESSES ONLY TAKING CASH WITHIN A 1 MILE RADIUS ## 
 
 # calculate business cash predictors
 names(yelp_data14)
@@ -228,7 +229,7 @@ credit <- 0
 train14$cash <- 0
 for (i in 1:nrow(train14)){
     distance <- sqrt((train14[i,"longmeters"]-business_cash14[,"longmeters"])^2 + (train14[i,"latmeters"]-business_cash14[,"latmeters"])^2)
-    business_radius <- which(distance < 3218.69)
+    business_radius <- which(distance < 1609.34)
     
     for (j in 1:length(business_radius)) {
       credit <- c(credit, business_cash14[business_radius[j],"attributes.Accepts.Credit.Cards"])
@@ -246,7 +247,7 @@ for (i in 1:nrow(train14)){
     }
 }
 
-## ADDING PREDICTOR: AVERAGE RATINGS OF BUSINESSES IN 1 MILE RADIUS ## 
+## ADDING PREDICTOR: 2014 AVERAGE RATINGS OF BUSINESSES IN 1 MILE RADIUS ## 
 
 # calculate business cash predictors
 
@@ -262,7 +263,7 @@ train14$avg_rating <- 0
 
 for (i in 1:nrow(train14)){
   distance <- sqrt((train14[i,"longmeters"]-business_rating14[,"longmeters"])^2 + (train14[i,"latmeters"]-business_rating14[,"latmeters"])^2)
-  business_radius <- which(distance < 3218.69)
+  business_radius <- which(distance < 1609.34)
   
   for (j in 1:length(business_radius)) {
     ratings <- c(ratings, business_rating14[business_radius[j], "business_stars"])
@@ -281,29 +282,49 @@ for (i in 1:nrow(train14)){
 
 ## FIT LOGISTIC REGRESSION MODEL ##
 
-## PREDICTORS: % OF CASH ONLY BUSINESSES WITHIN A 2 MILE RADIUS ##
+## PREDICTORS: % OF CASH ONLY BUSINESSES WITHIN A 1 MILE RADIUS ##
 ## RESPONSE: LOCATION OF CRIME OR NOT (1 or 0 respectively) ##
 
 str(train14)
-logm_14cash = glm(response ~ crime_density+cash, data = train14, family=binomial)
+logm_14cash2 = glm(response ~ crime_density+cash, data = train14, family=binomial)
+logm_14cash = glm(response ~ cash, data = train14, family=binomial)
+summary(logm_14cash2)
 summary(logm_14cash)
+
+# CRIME DENSITY + CASH AS PREDICTORS
 # Coefficients:
-#   Estimate Std. Error z value Pr(>|z|)    
-#   (Intercept)   -8.731e+00  2.026e-01  -43.09   <2e-16 ***
-#   crime_density  1.717e+09  5.066e+07   33.88   <2e-16 ***
-#   cash           4.827e-01  1.718e-02   28.09   <2e-16 ***
+#                    Estimate Std. Error z value Pr(>|z|)    
+#   (Intercept)   -2.503e+00  4.128e-02  -60.63   <2e-16 ***
+#   crime_density  3.994e+07  7.751e+05   51.53   <2e-16 ***
+#   cash           1.300e-01  7.094e-03   18.33   <2e-16 ***
+
+# CASH AS PREDICTOR
+# Coefficients:
+#                    Estimate Std. Error z value Pr(>|z|)    
+#   (Intercept) -1.020321   0.024827  -41.10   <2e-16 ***
+#   cash         0.344693   0.005966   57.78   <2e-16 ***
 
 ## PREDICTORS: AVERAGE BUSINESS RATING IN A 2 MILE RADIUS ##
 ## RESPONSE: LOCATION OF CRIME OR NOT (1 or 0 respectively) ##
 
 str(train14)
 logm_14ratings = glm(response ~ crime_density+avg_rating, data = train14, family=binomial)
+logm_14ratings2 = glm(response ~ avg_rating, data = train14, family=binomial)
 summary(logm_14ratings)
+summary(logm_14ratings2)
+
+# CRIME DENSITY + AVG_RATING AS PREDICTORS
 # Coefficients:
-#   Estimate Std. Error z value Pr(>|z|)    
-#   (Intercept)   -1.303e+01  6.622e-01 -19.678  < 2e-16 ***
-#   crime_density  2.443e+09  4.542e+07  53.779  < 2e-16 ***
-#   avg_rating     9.318e-01  1.547e-01   6.022 1.72e-09 ***
+#                    Estimate Std. Error z value Pr(>|z|)    
+#   (Intercept)   -2.872e+00  8.976e-02  -31.99   <2e-16 ***
+#   crime_density  4.330e+07  7.873e+05   55.00   <2e-16 ***
+#   avg_rating     2.377e-01  2.539e-02    9.36   <2e-16 ***
+
+# AVG_RATING AS PREDICTOR
+# Coefficients:
+#                Estimate Std. Error z value Pr(>|z|)    
+#   (Intercept) -1.17096    0.04533  -25.83   <2e-16 ***
+#   avg_rating   0.41353    0.01307   31.63   <2e-16 ***
 
 
 ### PREDICT RESPONSES ON 2015 DATA, USING FITTED MODEL AND PREDICTORS FROM 2014 ###
@@ -318,6 +339,7 @@ urbana_full15 <- urbana_full[,2:5]
 
 # create a set of 20,000 points (including crime)
 fill2 <- 20000 - nrow(crime_data15)
+set.seed(20)
 urbana_full15 <- urbana_full15[sample(nrow(urbana_full15), fill2), ]
 
 # include 2015 crime coordinates (without responses)
@@ -334,7 +356,7 @@ crime_density14 = kde(crime_data14[,c("longmeters","latmeters")], H=h, eval.poin
 predict15 = cbind(predict15, crime_density14)
 head(predict15)
 
-## ADDING PREDICTOR: % OF BUSINESSES ONLY TAKING CASH WITHIN A 2 MILE RADIUS ## 
+## ADDING PREDICTOR: % OF BUSINESSES ONLY TAKING CASH WITHIN A 1 MILE RADIUS ## 
 
 # calculate business cash predictors
 names(yelp_data15)
@@ -350,17 +372,24 @@ credit <- 0
 predict15$cash <- 0
 for (i in 1:nrow(predict15)){
   distance <- sqrt((predict15[i,"longmeters"]-business_cash15[,"longmeters"])^2 + (predict15[i,"latmeters"]-business_cash15[,"latmeters"])^2)
-  business_radius <- which(distance < 3218.69)
+  business_radius <- which(distance < 1609.34)
   for (j in 1:length(business_radius)) {
     credit <- c(credit, business_cash15[business_radius[j],"attributes.Accepts.Credit.Cards"])
   }
   credit_total <- sum(credit)/length(business_radius)
-  predict15$cash[i] <- ((1 - credit_total) * 100)
-  credit <- 0
+  
+  if (is.na(credit_total)) {
+    predict15$cash[i] <- 0
+    credit <- 0
+  }
+  else {
+    predict15$cash[i] <- ((1 - credit_total) * 100)
+    credit <- 0
+  }
 }
 
 
-## ADDING PREDICTOR: AVERAGE RATINGS OF BUSINESSES IN 2 MILE RADIUS ## 
+## ADDING PREDICTOR: AVERAGE RATINGS OF BUSINESSES IN 1 MILE RADIUS ## 
 
 # calculate business cash predictors
 
@@ -375,22 +404,67 @@ ratings <- 0
 predict15$avg_rating <- 0
 for (i in 1:nrow(predict15)){
   distance <- sqrt((predict15[i,"longmeters"]-business_rating15[,"longmeters"])^2 + (predict15[i,"latmeters"]-business_rating15[,"latmeters"])^2)
-  business_radius <- which(distance < 3218.69)
+  business_radius <- which(distance < 1609.34)
   for (j in 1:length(business_radius)) {
     ratings <- c(ratings, business_rating15[business_radius[j], "business_stars"])
   }
-  predict15$avg_rating[i] <- (sum(ratings)/length(business_radius))
-  ratings <- 0
+  if (is.na((sum(ratings)/length(business_radius)))) {
+    predict15$avg_rating[i] <- 0
+    ratings <- 0
+  }
+  else {
+    predict15$avg_rating[i] <- (sum(ratings)/length(business_radius))
+    ratings <- 0
+  }
 }
 
 ### PREDICTION ###
 
+# run prediction for cash + crime density
+crime_predict_cash2 <- predict(logm_14cash2, predict15, type="response")
 # run prediction for cash
-crime_predict_cash = predict(logm_14cash, predict15, type="response")
+crime_predict_cash <- predict(logm_14cash2, predict15, type="response")
 
+# run prediction for avg_ratings + crime density
+crime_predict_ratings2 <- predict(logm_14ratings2, predict15, type="response")
 # run prediction for avg_ratings
-crime_predict_ratings = predict(logm_14ratings, predict15, type="response")
+crime_predict_ratings <- predict(logm_14ratings, predict15, type="response")
+
 
 ## EVALUATE PREDICTIONS ##
+urbana_full15 <- urbana_full
+
+# create a set of 20,000 points (including crime)
+fill2 <- 20000 - nrow(crime_data15)
+urbana_full15 <- urbana_full15[sample(nrow(urbana_full15), fill2), ]
+
+# create true points for 2015 crime
+true15 <- rbind(urbana_full15, crime_data15[,c('response','long', 'lat', 'longmeters', 'latmeters')])
+
+# cash + crime density predictions vs. true crime responses
+pr_cashcrime <- prediction(crime_predict_cash2, true15$response)
+prf_cashcrime <- performance(pr_cashcrime, measure = "tpr", x.measure = "fpr")
+
+# cash predictions vs. true crime responses
+pr_cash <- prediction(crime_predict_cash, true15$response)
+prf_cash <- performance(pr_cash, measure = "tpr", x.measure = "fpr")
+
+# avg business rating + crime density predictions vs. true crime responses
+pr_ratingscrime <- prediction(crime_predict_ratings2, true15$response)
+prf_ratingscrime <- performance(pr_ratingscrime, measure = "tpr", x.measure = "fpr")
+
+# avg business rating predictions vs. true crime responses
+pr_ratings <- prediction(crime_predict_ratings, true15$response)
+prf_ratings <- performance(pr_ratings, measure = "tpr", x.measure = "fpr")
+
+# plot ROC curve for 4 predictions
+plot(prf_cashcrime, col='mediumvioletred', main="ROC Curves")
+plot(prf_cash, col='red', main="ROC Curves")
+plot(prf_ratingscrime, col='red', main="ROC Curves")
+plot(prf_ratings, col='red', main="ROC Curves")
 
 
+
+auc <- performance(pr_cashcrime, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
