@@ -9,6 +9,7 @@ library(ks)
 library(geosphere)
 library(MASS)
 require(caret)
+library(car)
 
 # read in data file 
 setwd("/Users/tomoei/Downloads/")
@@ -58,13 +59,13 @@ yelp$stars <- as.factor(yelp$stars)
 ##################### linear discriminant analysis ##################
 #####################################################################
 accuracys <- c()
-auc <- c()
+aucs <- c()
 colors <- c(1:10)
 fids <- createFolds(yelp$total,k=10)
 for (i in 1:10){
   test <- yelp[fids[[i]],]
   train <- yelp[-fids[[i]],]
-  lda.fit = lda(level ~ review_count + stars , data = train)
+  lda.fit = lda(level ~ review_count + stars + x + y , data = train)
   predictions = predict(lda.fit, newdata = test)
   num.correct = sum(predictions$class == test$level)
   accuracy = num.correct / nrow(test)
@@ -102,6 +103,8 @@ for (i in 1:nrow(yelp)){
 yelp$rate <- as.factor(yelp$rate)
 yelp$stars <- as.factor(yelp$stars)
 
+# hist(as.numeric(yelp$review_count))
+
 accuracys <- c()
 fids <- createFolds(yelp$total,k=10)
 for (i in 1:10){
@@ -120,9 +123,41 @@ mean(accuracys)
 ########################## logistic regression ######################
 #####################################################################
 
-fit = glm(level ~ review_count + stars, data = train, family="binomial")
+
 summary(fit)
 predict.lr <- predict(fit, newdata = test, type="response")
+num.correct = sum(predict.lr > 0.5)
+test$level
 # none of variables are significant.
+accuracys <- c()
+aucs <- c()
+for (i in 1:10){
+  test <- yelp[fids[[i]],]
+  train <- yelp[-fids[[i]],]
+  fit = glm(level ~ review_count + stars + x + y, data = train, family="binomial")
+  pred <- predict(fit, newdata = test, type="response")
+  # pred <- ifelse(pred > 0.5, 1, 0)
+
+  prediction <- prediction(pred, test$level)
+  perf <- performance(prediction, "tpr","fpr")
+  auc = performance(prediction, "auc")@y.values[[1]]
+  aucs <- c(aucs, auc)
+  
+  outcome <- ifelse(pred > 0.5, 1, 0)
+  num.correct = sum(as.data.frame(outcome)[,1] == test$level)
+  accuracy = num.correct / nrow(test)
+  accuracys <- c(accuracys, accuracy)
+  
+  par(new=TRUE)
+  plot(perf, col=i)
+  abline(0, 1, lty="dashed")
+}
+mean(auc)
+mean(accuracys)
+summary(fit)
+vif(fit)
+
+
+
 
 
